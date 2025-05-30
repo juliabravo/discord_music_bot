@@ -1,0 +1,137 @@
+import discord
+from discord.ext import commands
+from dotenv import load_dotenv
+import os
+import asyncio
+import yt_dlp
+
+# token
+load_dotenv()
+token = os.getenv("DISCORD_BOT_TOKEN")
+
+print(f"Token loaded? {'Yes' if token else 'No'}")
+
+# intents
+intents = discord.Intents.default()  # basic intents
+intents.message_content = True
+intents.voice_states = True
+
+# da bot
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user}")
+
+# ping pong
+
+
+@bot.command()
+async def ping(ctx):
+    if ctx.author.voice:
+        channel = ctx.author.voice.channel
+        if ctx.voice_client is None:
+            await channel.connect()
+        else:
+            await ctx.voice_client.move_to(channel)
+        await ctx.send(f"Pong! Joined {channel.name}!")
+    else:
+        await ctx.send("You must be in a voice channel.")
+
+
+# music player for playlists
+class MusicPlayer:
+    def __init__(self, ctx):
+        self.ctx = ctx
+        self.queue = asyncio.Queue()
+        self.play_next_song = asyncio.Event()
+        self.current = None
+        self.bot = ctx.bot
+        self.audio_player_task = self.bot.loop.create_task(
+            self.audio_player_loop()
+        )
+
+    async def audio_player_loop(self):
+        while True:
+            self.play_next_song.clear()
+            self.current = await self.queue.get()
+            self.ctx.voice_client.play(
+                self.current['source'],
+                after=lambda e: self.bot.loop.call_soon_threadsafe(
+                    self.play_next_song.set)
+            )
+            await self.ctx.send(f"Now playing: {self.current['title']}")
+            await self.play_next_song.wait()
+
+    async def queue_song(self, url):
+        ytdlp_opts = {
+            'format': 'bestaudio/best',
+            'quiet': True,
+            'ignoreerrors': True,  # skip videos with errors
+            'no_warnings': True,   # suppress warning output
+            'default_search': 'ytsearch',  # optional: allows keyword search
+            'extract_flat': False  # ensures URLs get fully resolved
+        }
+        ffmpeg_opts = {'options': '-vn'}
+
+        with yt_dlp.YoutubeDL(ytdlp_opts) as ydl:
+            try:
+                info = ydl.extract_info(url, download=False)
+            except Exception as e:
+                await self.ctx.send(f"Error loading audio: {e}")
+                return
+
+            # determine if it's a playlist or single video
+            entries = info['entries'] if 'entries' in info else [info]
+
+            added_count = 0
+            for entry in entries:
+                if entry is None:
+                    continue
+                try:
+                    # skip private/unavailable videos
+                    if entry.get('is_private') or entry.get('availability') == 'private':
+                        continue
+
+                    audio_url = entry['url']
+                    title = entry.get('title', 'Unknown')
+                    source = await discord.FFmpegOpusAudio.from_probe(audio_url, **ffmpeg_opts)
+                    await self.queue.put({'source': source, 'title': title})
+                    added_count += 1
+                except Exception as e:
+                    print(f"Skipped track due to error: {e}")
+
+            if added_count == 0:
+                await self.ctx.send("❌ No playable songs found.")
+            else:
+                await self.ctx.send("Song(s) added to queue")
+
+
+music_players = {}
+
+# make bot play music
+
+
+@bot.command()
+async def play(ctx, url):
+    if ctx.author.voice is None:
+        await ctx.send("Enter a voice channel to play music.")
+        return
+
+    voice_channel = ctx.author.voice.channel
+
+    if ctx.voice_client is None:
+        await voice_channel.connect()
+    elif ctx.voice_client.channel != voice_channel:
+        await ctx.voice_client.move_to(voice_channel)
+
+    if ctx.guild.id not in music_players:
+        music_players[ctx.guild.id] = MusicPlayer(ctx)
+
+    player = music_players[ctx.guild.id]
+    await player.queue_song(url)
+
+
+# run bot
+bot.run(token)
