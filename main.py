@@ -35,7 +35,7 @@ async def ping(ctx):
             await channel.connect()
         else:
             await ctx.voice_client.move_to(channel)
-        await ctx.send(f"Pong! Joined {channel.name}!")
+        await ctx.send(f"Joined {channel.name}!")
     else:
         await ctx.send("You must be in a voice channel.")
 
@@ -103,7 +103,7 @@ class MusicPlayer:
                     print(f"Skipped track due to error: {e}")
 
             if added_count == 0:
-                await self.ctx.send("❌ No playable songs found.")
+                await self.ctx.send("No playable songs found.")
             else:
                 await self.ctx.send("Song(s) added to queue")
 
