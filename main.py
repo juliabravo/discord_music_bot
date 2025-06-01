@@ -138,6 +138,8 @@ class MusicPlayer:
                 'noplaylist': True,
                 'no_warnings': True,
                 'geo_bypass': True,
+                'ffmpeg_location': '/usr/bin/ffmpeg',
+                'postprocessor_args': ['-probesize', '5000000'],
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'opus',
