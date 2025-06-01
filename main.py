@@ -64,105 +64,102 @@ class MusicPlayer:
             await self.ctx.send(f"Now playing: {self.current['title']}")
             await self.play_next_song.wait()
 
-
-async def queue_song(self, url):
-    if "soundcloud.com" not in url.lower():
-        await self.ctx.send("Only SoundCloud links are allowed.")
-        return
-
-    ytdlp_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'ignoreerrors': True,  # skip videos with errors
-        'no_warnings': True,   # suppress warning output
-        'default_search': 'auto',  # auto supports YouTube + SoundCloud
-        'extract_flat': False
-    }
-
-    ffmpeg_opts = {
-        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-        'options': '-vn'
-    }
-
-    def get_best_audio_url(entry):
-        # Try to pick best audio-only format
-        formats = entry.get('formats', [])
-        for f in reversed(formats):  # reverse to prioritize better formats
-            if f.get('acodec') != 'none' and f.get('vcodec') == 'none':
-                return f.get('url')
-        return entry.get('url')  # fallback if needed
-
-    with yt_dlp.YoutubeDL(ytdlp_opts) as ydl:
-        try:
-            info = ydl.extract_info(url, download=False)
-        except Exception as e:
-            await self.ctx.send(f"Error loading audio: {e}")
+    async def queue_song(self, url):
+        if "soundcloud.com" not in url.lower():
+            await self.ctx.send("Only SoundCloud links are allowed.")
             return
 
-        # determine if playlist or single track
-        entries = info.get('entries') or [info]
+        ytdlp_opts = {
+            'format': 'bestaudio/best',
+            'quiet': True,
+            'ignoreerrors': True,  # skip videos with errors
+            'no_warnings': True,   # suppress warning output
+            'default_search': 'auto',  # auto supports YouTube + SoundCloud
+            'extract_flat': False
+        }
 
-        added_count = 0
-        for entry in entries:
-            if entry is None:
-                continue
+        ffmpeg_opts = {
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'options': '-vn'
+        }
+
+        def get_best_audio_url(entry):
+            # Try to pick best audio-only format
+            formats = entry.get('formats', [])
+            for f in reversed(formats):  # reverse to prioritize better formats
+                if f.get('acodec') != 'none' and f.get('vcodec') == 'none':
+                    return f.get('url')
+            return entry.get('url')  # fallback if needed
+
+        with yt_dlp.YoutubeDL(ytdlp_opts) as ydl:
             try:
-                # skip private/unavailable tracks
-                if entry.get('is_private') or entry.get('availability') == 'private':
-                    continue
-
-                # get best audio stream
-                audio_url = get_best_audio_url(entry)
-                if not audio_url:
-                    continue
-
-                title = entry.get('title', 'Unknown')
-                source = await discord.FFmpegOpusAudio.from_probe(audio_url, **ffmpeg_opts)
-
-                # add to queue
-                await self.queue.put({'source': source, 'title': title})
-                added_count += 1
-
+                info = ydl.extract_info(url, download=False)
             except Exception as e:
-                print(f"Skipped track due to error: {e}")
-                continue
+                await self.ctx.send(f"Error loading audio: {e}")
+                return
 
-        if added_count == 0:
-            await self.ctx.send("No playable songs found.")
-        else:
-            await self.ctx.send(f"{added_count} song(s) added to queue.")
+            # determine if playlist or single track
+            entries = info.get('entries') or [info]
 
-    def get_queue(self):
-        return list(self.queue._queue)
+            added_count = 0
+            for entry in entries:
+                if entry is None:
+                    continue
+                try:
+                    # skip private/unavailable tracks
+                    if entry.get('is_private') or entry.get('availability') == 'private':
+                        continue
 
+                    # get best audio stream
+                    audio_url = get_best_audio_url(entry)
+                    if not audio_url:
+                        continue
 
-music_players = {}
+                    title = entry.get('title', 'Unknown')
+                    source = await discord.FFmpegOpusAudio.from_probe(audio_url, **ffmpeg_opts)
 
-# commands
+                    # add to queue
+                    await self.queue.put({'source': source, 'title': title})
+                    added_count += 1
 
+                except Exception as e:
+                    print(f"Skipped track due to error: {e}")
+                    continue
 
-@bot.command()
-async def play(ctx, url):
-    if ctx.author.voice is None:
-        await ctx.send("Enter a voice channel to play music.")
-        return
+            if added_count == 0:
+                await self.ctx.send("No playable songs found.")
+            else:
+                await self.ctx.send(f"{added_count} song(s) added to queue.")
 
-    if "soundcloud.com" not in url.lower():
-        await ctx.send("Only SoundCloud links are supported")
-        return
+        def get_queue(self):
+            return list(self.queue._queue)
 
-    voice_channel = ctx.author.voice.channel
+    music_players = {}
 
-    if ctx.voice_client is None:
-        await voice_channel.connect()
-    elif ctx.voice_client.channel != voice_channel:
-        await ctx.voice_client.move_to(voice_channel)
+    # commands
 
-    if ctx.guild.id not in music_players:
-        music_players[ctx.guild.id] = MusicPlayer(ctx)
+    @bot.command()
+    async def play(ctx, url):
+        if ctx.author.voice is None:
+            await ctx.send("Enter a voice channel to play music.")
+            return
 
-    player = music_players[ctx.guild.id]
-    await player.queue_song(url)
+        if "soundcloud.com" not in url.lower():
+            await ctx.send("Only SoundCloud links are supported")
+            return
+
+        voice_channel = ctx.author.voice.channel
+
+        if ctx.voice_client is None:
+            await voice_channel.connect()
+        elif ctx.voice_client.channel != voice_channel:
+            await ctx.voice_client.move_to(voice_channel)
+
+        if ctx.guild.id not in music_players:
+            music_players[ctx.guild.id] = MusicPlayer(ctx)
+
+        player = music_players[ctx.guild.id]
+        await player.queue_song(url)
 
 
 @bot.command()
