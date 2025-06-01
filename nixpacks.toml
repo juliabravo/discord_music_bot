@@ -3,12 +3,14 @@ python = "3.12"
 ffmpeg = "latest"
 
 [phases.setup]
-nixPkgs = ["python3", "python3Packages.pip", "ffmpeg"]
+nixPkgs = ["python3", "python3Packages.virtualenv", "ffmpeg"]
 
 [phases.install]
 cmds = [
-  "pip install -r requirements.txt"
+  "python -m virtualenv /opt/venv",
+  "/opt/venv/bin/pip install -r requirements.txt"
 ]
 
 [phases.start]
-cmd = "python main.py"
+cmd = ". /opt/venv/bin/activate && python main.py"
+
