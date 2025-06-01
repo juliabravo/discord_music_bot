@@ -3,13 +3,11 @@ python = "3.12"
 ffmpeg = "latest"
 
 [phases.setup]
-nixPkgs = ["python3", "ffmpeg"]
+nixPkgs = ["python3", "python3Packages.pip", "ffmpeg"]
 
 [phases.install]
 cmds = [
-  "python -m ensurepip --upgrade",        
-  "python -m pip install --upgrade pip",   
-  "python -m pip install -r requirements.txt"
+  "pip install -r requirements.txt"
 ]
 
 [phases.start]
