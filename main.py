@@ -35,7 +35,7 @@ async def ping(ctx):
             await channel.connect()
         else:
             await ctx.voice_client.move_to(channel)
-        await ctx.send(f"Joined {channel.name}!")
+        await ctx.send(f"Pong! Joined {channel.name}!")
     else:
         await ctx.send("You must be in a voice channel.")
 
@@ -65,13 +65,17 @@ class MusicPlayer:
             await self.play_next_song.wait()
 
     async def queue_song(self, url):
+        if "soundcloud.com" not in url.lower():
+            await self.ctx.send("Only SoundCloud links are allowed.")
+            return
+
         ytdlp_opts = {
             'format': 'bestaudio/best',
             'quiet': True,
             'ignoreerrors': True,  # skip videos with errors
             'no_warnings': True,   # suppress warning output
-            'default_search': 'ytsearch',  # optional: allows keyword search
-            'extract_flat': False  # ensures URLs get fully resolved
+            'default_search': 'auto',  # auto supports YouTube + SoundCloud
+            'extract_flat': False
         }
         ffmpeg_opts = {'options': '-vn'}
 
@@ -82,7 +86,7 @@ class MusicPlayer:
                 await self.ctx.send(f"Error loading audio: {e}")
                 return
 
-            # determine if it's a playlist or single video
+            # determine if playlist or single video
             entries = info['entries'] if 'entries' in info else [info]
 
             added_count = 0
@@ -107,16 +111,23 @@ class MusicPlayer:
             else:
                 await self.ctx.send("Song(s) added to queue")
 
+    def get_queue(self):
+        return list(self.queue._queue)
+
 
 music_players = {}
 
-# make bot play music
+# commands
 
 
 @bot.command()
 async def play(ctx, url):
     if ctx.author.voice is None:
         await ctx.send("Enter a voice channel to play music.")
+        return
+
+    if "soundcloud.com" not in url.lower():
+        await ctx.send("Only SoundCloud links are supported")
         return
 
     voice_channel = ctx.author.voice.channel
@@ -132,6 +143,75 @@ async def play(ctx, url):
     player = music_players[ctx.guild.id]
     await player.queue_song(url)
 
+
+@bot.command()
+async def skip(ctx):
+    if ctx.voice_client and ctx.voice_client.is_playing():
+        ctx.voice_client.stop()
+        await ctx.send("Skipped current track.")
+    else:
+        await ctx.send("There's no song playing.")
+
+
+@bot.command()
+async def queue(ctx):
+    player = music_players.get(ctx.guild.id)
+    if not player:
+        await ctx.send("Nothing is in the queue")
+        return
+
+    queue_list = player.get_queue()
+    if not queue_list:
+        await ctx.send("Queue is empty ")
+    else:
+        queue_text = "\n".join(
+            [f"{idx+1}. {song['title']}" for idx, song in enumerate(queue_list)])
+        await ctx.send(f"**Current Queue:**\n{queue_text}")
+
+
+@bot.command()
+async def pause(ctx):
+    if ctx.voice_client and ctx.voice_client.is_playing():
+        ctx.voice_client.pause()
+        await ctx.send("⏸️ Paused.")
+    else:
+        await ctx.send("Nothing is playing.")
+
+
+@bot.command()
+async def resume(ctx):
+    if ctx.voice_client and ctx.voice_client.is_paused():
+        ctx.voice_client.resume()
+        await ctx.send("▶️ Resumed.")
+    else:
+        await ctx.send("Nothing is paused.")
+
+
+@bot.command()
+async def stop(ctx):
+    if ctx.voice_client:
+        await ctx.voice_client.disconnect()
+        music_players.pop(ctx.guild.id, None)
+        await ctx.send("Stopped and left the voice channel.")
+    else:
+        await ctx.send("Not connected to a voice channel.")
+
+
+@bot.command(name="commands")
+async def show_commands(ctx):
+    commands_list = """
+ ****Music Bot Commands**** 
+
+`!ping` — Join your voice channel.
+`!play <SoundCloud URL>` — Play a song or playlist from SoundCloud.
+`!skip` — Skip the currently playing song.
+`!pause` — Pause the current song.
+`!resume` — Resume a paused song.
+`!queue` — Show the list of queued songs.
+`!stop` — Stop the music and leave the voice channel.
+`!commands` — Show this help message.
+    """
+    await ctx.send(commands_list)
 
 # run bot
 bot.run(token)
