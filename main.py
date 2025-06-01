@@ -64,52 +64,73 @@ class MusicPlayer:
             await self.ctx.send(f"Now playing: {self.current['title']}")
             await self.play_next_song.wait()
 
-    async def queue_song(self, url):
-        if "soundcloud.com" not in url.lower():
-            await self.ctx.send("Only SoundCloud links are allowed.")
+
+async def queue_song(self, url):
+    if "soundcloud.com" not in url.lower():
+        await self.ctx.send("Only SoundCloud links are allowed.")
+        return
+
+    ytdlp_opts = {
+        'format': 'bestaudio/best',
+        'quiet': True,
+        'ignoreerrors': True,  # skip videos with errors
+        'no_warnings': True,   # suppress warning output
+        'default_search': 'auto',  # auto supports YouTube + SoundCloud
+        'extract_flat': False
+    }
+
+    ffmpeg_opts = {
+        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+        'options': '-vn'
+    }
+
+    def get_best_audio_url(entry):
+        # Try to pick best audio-only format
+        formats = entry.get('formats', [])
+        for f in reversed(formats):  # reverse to prioritize better formats
+            if f.get('acodec') != 'none' and f.get('vcodec') == 'none':
+                return f.get('url')
+        return entry.get('url')  # fallback if needed
+
+    with yt_dlp.YoutubeDL(ytdlp_opts) as ydl:
+        try:
+            info = ydl.extract_info(url, download=False)
+        except Exception as e:
+            await self.ctx.send(f"Error loading audio: {e}")
             return
 
-        ytdlp_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'ignoreerrors': True,  # skip videos with errors
-            'no_warnings': True,   # suppress warning output
-            'default_search': 'auto',  # auto supports YouTube + SoundCloud
-            'extract_flat': False
-        }
-        ffmpeg_opts = {'options': '-vn'}
+        # determine if playlist or single track
+        entries = info.get('entries') or [info]
 
-        with yt_dlp.YoutubeDL(ytdlp_opts) as ydl:
+        added_count = 0
+        for entry in entries:
+            if entry is None:
+                continue
             try:
-                info = ydl.extract_info(url, download=False)
-            except Exception as e:
-                await self.ctx.send(f"Error loading audio: {e}")
-                return
-
-            # determine if playlist or single video
-            entries = info['entries'] if 'entries' in info else [info]
-
-            added_count = 0
-            for entry in entries:
-                if entry is None:
+                # skip private/unavailable tracks
+                if entry.get('is_private') or entry.get('availability') == 'private':
                     continue
-                try:
-                    # skip private/unavailable videos
-                    if entry.get('is_private') or entry.get('availability') == 'private':
-                        continue
 
-                    audio_url = entry['url']
-                    title = entry.get('title', 'Unknown')
-                    source = await discord.FFmpegOpusAudio.from_probe(audio_url, **ffmpeg_opts)
-                    await self.queue.put({'source': source, 'title': title})
-                    added_count += 1
-                except Exception as e:
-                    print(f"Skipped track due to error: {e}")
+                # get best audio stream
+                audio_url = get_best_audio_url(entry)
+                if not audio_url:
+                    continue
 
-            if added_count == 0:
-                await self.ctx.send("No playable songs found.")
-            else:
-                await self.ctx.send("Song(s) added to queue")
+                title = entry.get('title', 'Unknown')
+                source = await discord.FFmpegOpusAudio.from_probe(audio_url, **ffmpeg_opts)
+
+                # add to queue
+                await self.queue.put({'source': source, 'title': title})
+                added_count += 1
+
+            except Exception as e:
+                print(f"Skipped track due to error: {e}")
+                continue
+
+        if added_count == 0:
+            await self.ctx.send("No playable songs found.")
+        else:
+            await self.ctx.send(f"{added_count} song(s) added to queue.")
 
     def get_queue(self):
         return list(self.queue._queue)
