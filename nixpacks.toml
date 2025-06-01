@@ -1,11 +1,13 @@
 [tools]
+python = "3.12"
 ffmpeg = "latest"
 
 [phases.setup]
-nixPkgs = ["python312Full", "ffmpeg"]
+nixPkgs = ["ffmpeg"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
 
 [phases.start]
 cmd = ". /opt/venv/bin/activate && export PATH=$PATH:/root/.nix-profile/bin && which ffprobe && python main.py"
+
