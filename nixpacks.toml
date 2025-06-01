@@ -1,2 +1,5 @@
 [tools]
 ffmpeg = "latest"
+
+[packages]
+ffmpeg = "latest"
