@@ -3,13 +3,12 @@ python = "3.12"
 ffmpeg = "latest"
 
 [phases.setup]
-nixPkgs = ["python3", "python3Packages.virtualenv", "ffmpeg"]
+nixPkgs = ["python3", "ffmpeg"]
 
 [phases.install]
 cmds = [
-  "python3 --version",
-  "python3 -m virtualenv /opt/venv",
-  "ls -l /opt",
+  "python3 -m venv /opt/venv",
+  "/opt/venv/bin/pip install --upgrade pip",
   "/opt/venv/bin/pip install -r requirements.txt"
 ]
 
