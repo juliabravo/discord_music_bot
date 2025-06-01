@@ -2,7 +2,7 @@
 ffmpeg = "latest"
 
 [phases.setup]
-nixPkgs = ["python312Full", "ffmpeg", "ffprobe"]
+nixPkgs = ["python312Full", "ffmpeg"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
