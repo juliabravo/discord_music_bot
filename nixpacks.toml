@@ -6,7 +6,7 @@ ffmpeg = "latest"
 nixPkgs = ["ffmpeg"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = [". /opt/venv/bin/activate && pip install -r requirements.txt"]
 
 [phases.start]
 cmd = ". /opt/venv/bin/activate && export PATH=$PATH:/root/.nix-profile/bin && which ffprobe && python main.py"
