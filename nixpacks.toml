@@ -7,10 +7,11 @@ nixPkgs = ["python3", "python3Packages.virtualenv", "ffmpeg"]
 
 [phases.install]
 cmds = [
-  "python -m virtualenv /opt/venv",
+  "python3 --version",
+  "python3 -m virtualenv /opt/venv",
+  "ls -l /opt",
   "/opt/venv/bin/pip install -r requirements.txt"
 ]
 
 [phases.start]
 cmd = ". /opt/venv/bin/activate && python main.py"
-
