@@ -62,7 +62,7 @@ class MusicPlayer:
             self.ctx.voice_client.play(
                 self.current['source'],
                 after=lambda e: self.bot.loop.call_soon_threadsafe(
-                    self.play_next_song.set)
+                    self.play_next_song.set) if not e else print(f"Playback error: {e}")
             )
             await self.ctx.send(f"Now playing: {self.current['title']}")
             await self.play_next_song.wait()
@@ -115,7 +115,10 @@ class MusicPlayer:
                         continue
 
                     title = entry.get('title', 'Unknown')
-                    source = await discord.FFmpegOpusAudio.from_probe(audio_url, **ffmpeg_opts)
+                    source = discord.FFmpegPCMAudio(audio_url, **ffmpeg_opts)
+                    source = discord.PCMVolumeTransformer(
+                        source)  # optional volume control
+
                     await self.queue.put({'source': source, 'title': title})
                     added_count += 1
                 except Exception as e:
