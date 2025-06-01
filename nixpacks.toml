@@ -3,11 +3,10 @@ python = "3.12"
 ffmpeg = "latest"
 
 [phases.setup]
-nixPkgs = ["ffmpeg"]
+nixPkgs = ["python3", "ffmpeg"]
 
 [phases.install]
-cmds = [". /opt/venv/bin/activate && pip install -r requirements.txt"]
+cmds = ["pip install --upgrade pip", "pip install -r requirements.txt"]
 
 [phases.start]
-cmd = ". /opt/venv/bin/activate && export PATH=$PATH:/root/.nix-profile/bin && which ffprobe && python main.py"
-
+cmd = "python main.py"
