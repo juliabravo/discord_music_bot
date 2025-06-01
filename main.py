@@ -62,13 +62,21 @@ class MusicPlayer:
             self.current = await self.queue.get()
 
             vc = self.ctx.voice_client
+            if not vc or not vc.is_connected():
+                await self.ctx.send("Voice client not connected, stopping player.")
+                break
+
+            def after_playing(error):
+                if error:
+                    print(f"Player error: {error}")
+                self.bot.loop.call_soon_threadsafe(self.play_next_song.set)
+
             vc.play(
                 self.current['source'],
-                after=lambda e: self.bot.loop.call_soon_threadsafe(
-                    self.play_next_song.set)
+                after=after_playing
             )
 
-            await self.ctx.send(f"Now playing: {self.current['title']}")
+            await self.ctx.send(f"Now playing: **{self.current['title']}**")
             await self.play_next_song.wait()
 
             # cleanup after playback
@@ -96,76 +104,67 @@ class MusicPlayer:
             'options': '-vn'
         }
 
-        def get_best_audio_url(entry):
-            formats = entry.get('formats', [])
-            for f in reversed(formats):
-                if f.get('acodec') != 'none' and f.get('vcodec') == 'none':
-                    return f.get('url')
-            return entry.get('url')
-
-        with yt_dlp.YoutubeDL(ytdlp_opts) as ydl:
-            try:
+        try:
+            with yt_dlp.YoutubeDL(ytdlp_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
-            except Exception as e:
-                await self.ctx.send(f"Error loading audio: {e}")
-                return
+        except Exception as e:
+            await self.ctx.send(f"Error loading audio info: {e}")
+            return
 
-            entries = info.get('entries') or [info]
+        entries = info.get('entries') or [info]
 
-            added_count = 0
-            import tempfile
+        added_count = 0
 
         for entry in entries:
             if entry is None:
                 continue
-            try:
-                if entry.get('is_private') or entry.get('availability') == 'private':
-                    continue
-
-                title = entry.get('title', 'Unknown')
-                webpage_url = entry.get('webpage_url')
-
-                if not webpage_url:
-                    continue
-
-                # Create a temp file path
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
-                    temp_filepath = tmp.name
-
-                # Redefine download options for file output
-                ytdlp_download_opts = {
-                    'format': 'bestaudio/best',
-                    'quiet': True,
-                    'outtmpl': temp_filepath,
-                    'noplaylist': True,
-                    'no_warnings': True,
-                    'geo_bypass': True,
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'opus',
-                        'preferredquality': '192',
-                    }],
-                }
-
-                with yt_dlp.YoutubeDL(ytdlp_download_opts) as downloader:
-                    downloader.download([webpage_url])
-
-                # Now create the FFmpeg audio source from file
-                source = discord.FFmpegPCMAudio(temp_filepath, **ffmpeg_opts)
-                source = discord.PCMVolumeTransformer(source)
-
-                # Queue it
-                await self.queue.put({'source': source, 'title': title, 'filepath': temp_filepath})
-                added_count += 1
-
-            except Exception as e:
-                print(f"Skipped track due to error: {e}")
+            if entry.get('is_private') or entry.get('availability') == 'private':
                 continue
 
-            if added_count == 0:
-                await self.ctx.send("No playable songs found.")
-            else:
-                await self.ctx.send(f"{added_count} song(s) added to queue.")
+            title = entry.get('title', 'Unknown')
+            webpage_url = entry.get('webpage_url')
+            if not webpage_url:
+                continue
+
+            # Create a temp file path
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".opus") as tmp:
+                temp_filepath = tmp.name
+
+            # Redefine download options for file output
+            ytdlp_download_opts = {
+                'format': 'bestaudio/best',
+                'quiet': True,
+                'outtmpl': temp_filepath,
+                'noplaylist': True,
+                'no_warnings': True,
+                'geo_bypass': True,
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'opus',
+                    'preferredquality': '192',
+                }],
+            }
+
+            try:
+                with yt_dlp.YoutubeDL(ytdlp_download_opts) as downloader:
+                    downloader.download([webpage_url])
+            except Exception as e:
+                print(f"Skipped track due to error: {e}")
+                os.remove(temp_filepath)
+                continue
+
+            # Now create the FFmpeg audio source from file
+            source = discord.FFmpegPCMAudio(temp_filepath, **ffmpeg_opts)
+            source = discord.PCMVolumeTransformer(source)
+
+            # Queue it
+            await self.queue.put({'source': source, 'title': title, 'filepath': temp_filepath})
+            added_count += 1
+
+        if added_count == 0:
+            await self.ctx.send("No playable songs found.")
+        else:
+            await self.ctx.send(f"{added_count} song(s) added to queue.")
 
     def get_queue(self):
         return list(self.queue._queue)
