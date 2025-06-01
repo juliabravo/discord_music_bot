@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import asyncio
 import yt_dlp
+import tempfile
 
 # token
 load_dotenv()
@@ -59,13 +60,22 @@ class MusicPlayer:
         while True:
             self.play_next_song.clear()
             self.current = await self.queue.get()
-            self.ctx.voice_client.play(
+
+            vc = self.ctx.voice_client
+            vc.play(
                 self.current['source'],
                 after=lambda e: self.bot.loop.call_soon_threadsafe(
-                    self.play_next_song.set) if not e else print(f"Playback error: {e}")
+                    self.play_next_song.set)
             )
+
             await self.ctx.send(f"Now playing: {self.current['title']}")
             await self.play_next_song.wait()
+
+            # cleanup after playback
+            try:
+                os.remove(self.current['filepath'])
+            except Exception as e:
+                print(f"Failed to delete temp file: {e}")
 
     async def queue_song(self, url):
         if "soundcloud.com" not in url.lower():
@@ -103,27 +113,54 @@ class MusicPlayer:
             entries = info.get('entries') or [info]
 
             added_count = 0
-            for entry in entries:
-                if entry is None:
+            import tempfile
+
+        for entry in entries:
+            if entry is None:
+                continue
+            try:
+                if entry.get('is_private') or entry.get('availability') == 'private':
                     continue
-                try:
-                    if entry.get('is_private') or entry.get('availability') == 'private':
-                        continue
 
-                    audio_url = get_best_audio_url(entry)
-                    if not audio_url:
-                        continue
+                title = entry.get('title', 'Unknown')
+                webpage_url = entry.get('webpage_url')
 
-                    title = entry.get('title', 'Unknown')
-                    source = discord.FFmpegPCMAudio(audio_url, **ffmpeg_opts)
-                    source = discord.PCMVolumeTransformer(
-                        source)  # optional volume control
-
-                    await self.queue.put({'source': source, 'title': title})
-                    added_count += 1
-                except Exception as e:
-                    print(f"Skipped track due to error: {e}")
+                if not webpage_url:
                     continue
+
+                # Create a temp file path
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+                    temp_filepath = tmp.name
+
+                # Redefine download options for file output
+                ytdlp_download_opts = {
+                    'format': 'bestaudio/best',
+                    'quiet': True,
+                    'outtmpl': temp_filepath,
+                    'noplaylist': True,
+                    'no_warnings': True,
+                    'geo_bypass': True,
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'opus',
+                        'preferredquality': '192',
+                    }],
+                }
+
+                with yt_dlp.YoutubeDL(ytdlp_download_opts) as downloader:
+                    downloader.download([webpage_url])
+
+                # Now create the FFmpeg audio source from file
+                source = discord.FFmpegPCMAudio(temp_filepath, **ffmpeg_opts)
+                source = discord.PCMVolumeTransformer(source)
+
+                # Queue it
+                await self.queue.put({'source': source, 'title': title, 'filepath': temp_filepath})
+                added_count += 1
+
+            except Exception as e:
+                print(f"Skipped track due to error: {e}")
+                continue
 
             if added_count == 0:
                 await self.ctx.send("No playable songs found.")
