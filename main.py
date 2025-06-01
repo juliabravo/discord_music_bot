@@ -35,7 +35,7 @@ async def ping(ctx):
             await channel.connect()
         else:
             await ctx.voice_client.move_to(channel)
-        await ctx.send(f"Pong! Joined {channel.name}!")
+        await ctx.send(f"Pong! Joined {channel.name}! Use the !commands for help!")
     else:
         await ctx.send("You must be in a voice channel.")
 
